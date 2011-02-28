@@ -22,16 +22,17 @@ use strict;
 use warnings;
 use lib qw(lib);
 
+BEGIN {
+    package POE::Kernel;
+    use constant ASSERT_DEFAULT => 1;
+}
 # A simple POP3 Server that demonstrates functionality
-use POE;
+use POE qw(Component::Client::HTTP);
 use POE::Component::Server::POP3;
-use Plugin;
-use Games::Lacuna::POP3::Plugin::TOP;
 use Data::Dumper;
+use HTTP::Request;
 
-use POE::Component::Server::POP3;
-
-my $debug = 0;
+my $debug = 1;
 if ($debug)
 {
     {
@@ -57,11 +58,10 @@ if ($debug)
 use JSON::Any;
 my $j = JSON::Any->new(utf8=>1);
 
-our $json = qq#
-{"jsonrpc":"2.0","id":53,"result":{"messages":[{"date":"27 02 2011 17:32:18 +0000","subject":"Pollution Causing Outrage","body_preview":"The citizens of {Planet 1","to_id":"583","tags":["Alert"],"from_id":"583","to":"halkeye","from":"halkeye","has_read":"1","id":"1616502","has_replied":"0"},{"date":"27 02 2011 16:37:04 +0000","subject":"Probe Detected!","body_preview":"Our probe in the {Starmap 95 1","to_id":"583","tags":["Alert"],"from_id":"583","to":"halkeye","from":"halkeye","has_read":"0","id":"1615620","has_replied":"0"},{"date":"27 02 2011 13:36:09 +0000","subject":"Re: Probe Destructions","body_preview":"Sorry for any loss of your pro","to_id":"583","tags":["Correspondence"],"from_id":"5806","to":"halkeye","from":"Galaga","has_read":"1","id":"1612552","has_replied":"0"},{"date":"27 02 2011 13:25:52 +0000","subject":"Put Me To Work","body_preview":"I'm ready to work. What do you","to_id":"583","tags":["Intelligence"],"from_id":"583","to":"halkeye","from":"halkeye","has_read":"0","id":"1612170","has_replied":"0"},{"date":"27 02 2011 13:25:52 +0000","subject":"Put Me To Work","body_preview":"I'm ready to work. What do you","to_id":"583","tags":["Intelligence"],"from_id":"583","to":"halkeye","from":"halkeye","has_read":"0","id":"1612169","has_replied":"0"},{"date":"27 02 2011 13:25:51 +0000","subject":"Put Me To Work","body_preview":"I'm ready to work. What do you","to_id":"583","tags":["Intelligence"],"from_id":"583","to":"halkeye","from":"halkeye","has_read":"0","id":"1612168","has_replied":"0"},{"date":"27 02 2011 13:25:51 +0000","subject":"Put Me To Work","body_preview":"I'm ready to work. What do you","to_id":"583","tags":["Intelligence"],"from_id":"583","to":"halkeye","from":"halkeye","has_read":"0","id":"1612167","has_replied":"0"},{"date":"27 02 2011 13:25:51 +0000","subject":"Put Me To Work","body_preview":"I'm ready to work. What do you","to_id":"583","tags":["Intelligence"],"from_id":"583","to":"halkeye","from":"halkeye","has_read":"0","id":"1612166","has_replied":"0"},{"date":"27 02 2011 13:25:51 +0000","subject":"Put Me To Work","body_preview":"I'm ready to work. What do you","to_id":"583","tags":["Intelligence"],"from_id":"583","to":"halkeye","from":"halkeye","has_read":"0","id":"1612165","has_replied":"0"},{"date":"27 02 2011 13:25:51 +0000","subject":"Put Me To Work","body_preview":"I'm ready to work. What do you","to_id":"583","tags":["Intelligence"],"from_id":"583","to":"halkeye","from":"halkeye","has_read":"0","id":"1612164","has_replied":"0"},{"date":"27 02 2011 13:25:49 +0000","subject":"Put Me To Work","body_preview":"I'm ready to work. What do you","to_id":"583","tags":["Intelligence"],"from_id":"583","to":"halkeye","from":"halkeye","has_read":"0","id":"1612163","has_replied":"0"},{"date":"27 02 2011 13:25:49 +0000","subject":"Put Me To Work","body_preview":"I'm ready to work. What do you","to_id":"583","tags":["Intelligence"],"from_id":"583","to":"halkeye","from":"halkeye","has_read":"0","id":"1612162","has_replied":"0"},{"date":"27 02 2011 13:25:49 +0000","subject":"Put Me To Work","body_preview":"I'm ready to work. What do you","to_id":"583","tags":["Intelligence"],"from_id":"583","to":"halkeye","from":"halkeye","has_read":"0","id":"1612161","has_replied":"0"},{"date":"27 02 2011 13:25:49 +0000","subject":"Put Me To Work","body_preview":"I'm ready to work. What do you","to_id":"583","tags":["Intelligence"],"from_id":"583","to":"halkeye","from":"halkeye","has_read":"0","id":"1612160","has_replied":"0"},{"date":"27 02 2011 13:25:49 +0000","subject":"Put Me To Work","body_preview":"I'm ready to work. What do you","to_id":"583","tags":["Intelligence"],"from_id":"583","to":"halkeye","from":"halkeye","has_read":"0","id":"1612159","has_replied":"0"},{"date":"27 02 2011 13:25:49 +0000","subject":"Put Me To Work","body_preview":"I'm ready to work. What do you","to_id":"583","tags":["Intelligence"],"from_id":"583","to":"halkeye","from":"halkeye","has_read":"0","id":"1612158","has_replied":"0"},{"date":"27 02 2011 13:25:49 +0000","subject":"Put Me To Work","body_preview":"I'm ready to work. What do you","to_id":"583","tags":["Intelligence"],"from_id":"583","to":"halkeye","from":"halkeye","has_read":"0","id":"1612157","has_replied":"0"},{"date":"27 02 2011 13:25:49 +0000","subject":"Put Me To Work","body_preview":"I'm ready to work. What do you","to_id":"583","tags":["Intelligence"],"from_id":"583","to":"halkeye","from":"halkeye","has_read":"0","id":"1612156","has_replied":"0"},{"date":"27 02 2011 12:15:06 +0000","subject":"Built Junk Henge Sculpture","body_preview":"Congratulations, We were just","to_id":"583","tags":["Medal"],"from_id":"583","to":"halkeye","from":"halkeye","has_read":"0","id":"1611234","has_replied":"0"},{"date":"27 02 2011 08:02:07 +0000","subject":"Probe Detected!","body_preview":"Our probe in the {Starmap -87 ","to_id":"583","tags":["Alert"],"from_id":"583","to":"halkeye","from":"halkeye","has_read":"1","id":"1607715","has_replied":"0"},{"date":"27 02 2011 08:02:07 +0000","subject":"Probe Detected!","body_preview":"Our probe in the {Starmap -93 ","to_id":"583","tags":["Alert"],"from_id":"583","to":"halkeye","from":"halkeye","has_read":"1","id":"1607714","has_replied":"0"},{"date":"27 02 2011 06:07:26 +0000","subject":"Probe Destroyed","body_preview":"We just lost contact with our ","to_id":"583","tags":["Alert"],"from_id":"583","to":"halkeye","from":"halkeye","has_read":"1","id":"1606130","has_replied":"0"},{"date":"27 02 2011 06:07:26 +0000","subject":"Probe Destroyed","body_preview":"We just lost contact with our ","to_id":"583","tags":["Alert"],"from_id":"583","to":"halkeye","from":"halkeye","has_read":"1","id":"1606126","has_replied":"0"},{"date":"27 02 2011 06:07:26 +0000","subject":"Probe Destroyed","body_preview":"We just lost contact with our ","to_id":"583","tags":["Alert"],"from_id":"583","to":"halkeye","from":"halkeye","has_read":"1","id":"1606119","has_replied":"0"},{"date":"27 02 2011 06:07:26 +0000","subject":"Probe Destroyed","body_preview":"We just lost contact with our ","to_id":"583","tags":["Alert"],"from_id":"583","to":"halkeye","from":"halkeye","has_read":"1","id":"1606115","has_replied":"0"}],"message_count":"321"}}
-#;
-
-our $jsonData = $j->jsonToObj($json);
+POE::Component::Client::HTTP->spawn(
+    Agent     => 'Lacuna-POP3-Server/0.01',   # defaults to something long
+    Alias     => 'ua',                  # defaults to 'weeble'
+);
 
 POE::Session->create(
     package_states => [
@@ -81,6 +81,9 @@ POE::Session->create(
               pop3d_cmd_retr
               pop3d_cmd_dele
               pop3d_cmd_noop
+
+              lacuna_login_response
+              lacuna_get_inbox_response
               )
         ],
     ],
@@ -124,52 +127,9 @@ sub pop3d_connection
     my ($heap, $id) = @_[HEAP, ARG0];
     warn "New Connection: $id\n";
 
-    my $input_formatter = DateTime::Format::Strptime->new(
-        pattern  => '%d %m %Y %H:%M:%S %z',
-        locale   => 'en_US',
-        on_error => 'croak',
-    );
-
-    my $output_formatter = DateTime::Format::Mail->new();
-
-
-    my $messages = {};
-    my $count = 1;
-    foreach my $msg (@{$jsonData->{result}->{messages}})
-    {
-        use Data::GUID;
-        my $id = $msg->{id}; #.Data::GUID->new->as_string();
-
-        my $dt = $input_formatter->parse_datetime($msg->{date});
-        my $date = $output_formatter->format_datetime($dt);
-        # For filtering
-        my @tagHeaders = map { ['X-Lacuna-Mail-Type-'.$_, 1] } @{$msg->{tags}};
-        #"has_read":"1","id":"1616502","has_replied":"0"
-
-        $messages->{$count} = {
-            id => $id,
-            headers => [
-                ['Message-ID' => $id],
-                ['Date' => $date],
-                ['From' => $msg->{from}.'@lacuna'],
-                ['To' => $msg->{to} . '@lacuna'],
-                ['Subject' => '[' . join(',', @{$msg->{tags}}) . '] ' . $msg->{subject}],
-                ['Mime-Version' => '1.0'],
-                ['Content-Type' => 'text/plain; charset=utf-8'],
-                ['Content-Transfer-Encoding' => 'quoted-printable'],
-                @tagHeaders,
-            ],
-            body => [
-                "I could not locate the plan you wanted me to find. I'm sure it is there somewhere. Give me another chance later and I'll locate it and complete my mission.",
-                "",
-                "Agent Null of Gavania 3",
-            ],
-        };
-        $count++;
-    }
     $heap->{clients}->{$id} = {
         auth => 0,
-        messages => $messages,
+        messages => {},
     };
     return;
 }
@@ -205,21 +165,156 @@ sub pop3d_cmd_user
     return;
 }
 
+# This is the sub which is called when the session receives a
+# 'response' event.
+sub lacuna_login_response
+{
+    my ($heap, $kernel, $request_packet, $response_packet) = @_[HEAP, KERNEL, ARG0, ARG1];
+
+    # HTTP::Request
+    my $request = $request_packet->[0];
+    # HTTP::Response
+    my $response = $response_packet->[0];
+
+    my $id = $request->{pop3_conn_id};
+    if (!$response->is_success)
+    {
+        $heap->{pop3d}->send_to_client($id, '-ERR Bad username or password');
+        return;
+    }
+    my $client;
+    eval {
+        my $responseJSON = $j->jsonToObj($response->content());
+        # {"id":5,"method":"login","jsonrpc":"2.0","params":["halkeye","---password---","53137d8f-3544-4118-9001-b0acbec70b3d"]}
+        $client = $heap->{clients}->{$id} || {};
+        $client->{session_id} = $responseJSON->{result}->{session_id};
+        $client->{has_new_messages} = $responseJSON->{result}->{status}->{has_new_messages};
+        $client->{auth} = 1;
+
+        $heap->{clients}->{$id} = $client;
+        #$heap = $request->{pop3_heap};
+    };
+    if (!$client)
+    {
+        warn "Lack of client";
+        print "Error: $@\n" if $@;
+        $heap->{pop3d}->send_to_client($id, '-ERR Error has occurred');
+        return;
+    }
+
+    $request = HTTP::Request->new( 
+            POST => 'http://pt.lacunaexpanse.com/inbox',
+            [],
+            '{"id":8,"method":"view_inbox","jsonrpc":"2.0","params":["' . $client->{session_id} . '",{"page_number":1}]}',
+    );
+    $request->{pop3_conn_id} = $id;
+    $kernel->post('ua', 'request', 'lacuna_get_inbox_response', $request);
+    return;
+}
+
+sub lacuna_get_inbox_response
+{
+    my ($heap, $self, $request_packet, $response_packet) = @_[HEAP, OBJECT, ARG0, ARG1];
+
+    # HTTP::Request
+    my $request = $request_packet->[0];
+    # HTTP::Response
+    my $response = $response_packet->[0];
+
+    my $id = $request->{pop3_conn_id};
+    if (!$response->is_success)
+    {
+        warn $response->content();
+        $heap->{pop3d}->send_to_client($id, '-ERR Error Occurred - get_inbox');
+        return;
+    }
+    my $client;
+    my $input_formatter = DateTime::Format::Strptime->new(
+        pattern  => '%d %m %Y %H:%M:%S %z',
+        locale   => 'en_US',
+        on_error => 'croak',
+    );
+
+    my $output_formatter = DateTime::Format::Mail->new();
+    eval {
+        my $responseJSON = $j->jsonToObj($response->content());
+        # {"jsonrpc":"2.0","id":8,"result":{"messages":[{"date":"28 02 2011 02:01:19 +0000","subject":"Glyph Discovered!","body_preview":"Great news! Our archaeologists","to_id":"583","tags":["Alert"],"from_id":"583","to":"halkeye","from":"halkeye","has_read":"1","id":"1626283","has_replied":"0"}],"message_count":"338"}}
+        $client = $heap->{clients}->{$id} || {};
+
+        my $count = 1;
+        foreach my $msg (@{$responseJSON->{result}->{messages}})
+        {
+            #use Data::GUID;
+            my $id = $msg->{id}; #.Data::GUID->new->as_string();
+
+            my $dt = $input_formatter->parse_datetime($msg->{date});
+            my $date = $output_formatter->format_datetime($dt);
+            # For filtering
+            my @tagHeaders = map { ['X-Lacuna-Mail-Type-'.$_, 1] } @{$msg->{tags}};
+            #"has_read":"1","id":"1616502","has_replied":"0"
+
+            $client->{messages}->{$count} = {
+                id => $id,
+                headers => [
+                    ['Message-ID' => $id],
+                    ['Date' => $date],
+                    ['From' => $msg->{from}.'@lacuna'],
+                    ['To' => $msg->{to} . '@lacuna'],
+                    ['Subject' => '[' . join(',', @{$msg->{tags}}) . '] ' . $msg->{subject}],
+                    ['Mime-Version' => '1.0'],
+                    ['Content-Type' => 'text/plain; charset=utf-8'],
+                    ['Content-Transfer-Encoding' => 'quoted-printable'],
+                    @tagHeaders,
+                ],
+                #body => [
+                #    "I could not locate the plan you wanted me to find. I'm sure it is there somewhere. Give me another chance later and I'll locate it and complete my mission.",
+                #    "",
+                #    "Agent Null of Gavania 3",
+                #],
+            };
+            $count++;
+        }
+        $heap->{clients}->{$id} = $client;
+        $heap->{pop3d}->send_to_client($id, '+OK Mailbox open, 0 messages');
+    };
+
+    if (!$client)
+    {
+        warn "Error: $@\n" if $@;
+        warn "Lack of client";
+        $heap->{pop3d}->send_to_client($id, '-ERR Error has occurred');
+        return;
+    }
+}
+
 sub pop3d_cmd_pass
 {
-    my ($heap, $id) = @_[HEAP, ARG0];
+    my ($heap, $self, $kernel, $id) = @_[HEAP, OBJECT, KERNEL, ARG0];
     my $pass = (split /\s+/, $_[ARG1])[0];
     unless ($pass)
     {
         $heap->{pop3d}->send_to_client($id, '-ERR Missing password argument');
         return;
     }
-    $heap->{clients}->{$id}->{pass} = $pass;
 
-    # Check the password
-    $heap->{clients}->{$id}->{auth} = 1;
-    #FIXME
-    $heap->{pop3d}->send_to_client($id, '+OK Mailbox open, 0 messages');
+    my $user = $heap->{clients}->{id}->{user};
+    my $request = HTTP::Request->new( 
+            POST => 'http://pt.lacunaexpanse.com/empire',
+            [], '{"id":5,"method":"login","jsonrpc":"2.0","params":["'.$user.'","'.$pass.'","53137d8f-3544-4118-9001-b0acbec70b3d"]}'
+    );
+    $request->{pop3_conn_id} = $id;
+    $kernel->post('ua', 'request', 'lacuna_login_response', $request);
+    return;
+    
+    # pt.lacunaexpanse.com
+    #
+    # {"id":8,"method":"view_inbox","jsonrpc":"2.0","params":["2b52ce9d-5cad-40fa-9d24-c7af4d30f224",{"page_number":1}]}
+    # {"jsonrpc":"2.0","id":8,"result":{"messages":[{"date":"28 02 2011 02:01:19 +0000","subject":"Glyph Discovered!","body_preview":"Great news! Our archaeologists","to_id":"583","tags":["Alert"],"from_id":"583","to":"halkeye","from":"halkeye","has_read":"1","id":"1626283","has_replied":"0"}],"message_count":"338"}}
+    #
+    # {"id":9,"method":"read_message","jsonrpc":"2.0","params":["2b52ce9d-5cad-40fa-9d24-c7af4d30f224","1623899"]}
+    # {"jsonrpc":"2.0","id":9,"result":{"message":{"attachments":null,"date":"27 02 2011 23:33:48 +0000","subject":"Pollution Causing Outrage","in_reply_to":null,"to_id":"583","tags":["Alert"],"body":"The citizens of {Planet 123456 Planet Name} are up in arms about the level of pollution being produced by the continued growth on the planet.\n\nYou should find a way to manage the waste or their discontent could affect the progress of the empire dramatically.\n\nRegards,\n\nYour Humble Assistant\n","from_id":"583","to":"halkeye","from":"halkeye","has_read":"1","has_replied":"0","id":"1623899","recipients":["halkeye"],"has_archived":"0"}}}
+    #
+    # {"id":10,"method":"archive_messages","jsonrpc":"2.0","params":["2b52ce9d-5cad-40fa-9d24-c7af4d30f224",["1623899"]]}
     return;
 }
 
