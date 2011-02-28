@@ -31,7 +31,7 @@ use Data::Dumper;
 
 use POE::Component::Server::POP3;
 
-my $debug = 1;
+my $debug = 0;
 if ($debug)
 {
     {
@@ -123,9 +123,6 @@ sub pop3d_connection
 {
     my ($heap, $id) = @_[HEAP, ARG0];
     warn "New Connection: $id\n";
-    $heap->{clients}->{$id} = {auth => 0};
-    
-    my $messages = [];
 
     my $input_formatter = DateTime::Format::Strptime->new(
         pattern  => '%d %m %Y %H:%M:%S %z',
@@ -136,10 +133,12 @@ sub pop3d_connection
     my $output_formatter = DateTime::Format::Mail->new();
 
 
+    my $messages = {};
+    my $count = 1;
     foreach my $msg (@{$jsonData->{result}->{messages}})
     {
         use Data::GUID;
-        my $id = $msg->{id}; #Data::GUID->new->as_string();
+        my $id = $msg->{id}; #.Data::GUID->new->as_string();
 
         my $dt = $input_formatter->parse_datetime($msg->{date});
         my $date = $output_formatter->format_datetime($dt);
@@ -147,7 +146,7 @@ sub pop3d_connection
         my @tagHeaders = map { ['X-Lacuna-Mail-Type-'.$_, 1] } @{$msg->{tags}};
         #"has_read":"1","id":"1616502","has_replied":"0"
 
-        push @$messages, {
+        $messages->{$count} = {
             id => $id,
             headers => [
                 ['Message-ID' => $id],
@@ -166,8 +165,12 @@ sub pop3d_connection
                 "Agent Null of Gavania 3",
             ],
         };
+        $count++;
     }
-    $heap->{clients}->{$id}->{messages} = $messages;
+    $heap->{clients}->{$id} = {
+        auth => 0,
+        messages => $messages,
+    };
     return;
 }
 
@@ -215,6 +218,7 @@ sub pop3d_cmd_pass
 
     # Check the password
     $heap->{clients}->{$id}->{auth} = 1;
+    #FIXME
     $heap->{pop3d}->send_to_client($id, '+OK Mailbox open, 0 messages');
     return;
 }
@@ -227,7 +231,7 @@ sub pop3d_cmd_stat
         $heap->{pop3d}->send_to_client($id, '-ERR Unknown AUTHORIZATION state command');
         return;
     }
-    my $count = scalar @{$heap->{clients}->{$id}->{messages}}-1;
+    my $count = scalar(keys %{$heap->{clients}->{$id}->{messages}})-1;
     $heap->{pop3d}->send_to_client($id, "+OK $count 10000");
     return;
 }
@@ -254,9 +258,10 @@ sub pop3d_cmd_uidl
     }
     $heap->{pop3d}->send_to_client($id, '+OK');
     {
-        my $mid = 1;
-        foreach my $message (@{$heap->{clients}->{$id}->{messages}})
+        my $count = scalar(keys %{$heap->{clients}->{$id}->{messages}})-1;
+        foreach my $mid (1..$count)
         {
+            my $message = $heap->{clients}->{$id}->{messages}->{$mid};
             $heap->{pop3d}->send_to_client($id, "$mid " . $message->{id});
             $mid++;
         }
@@ -281,7 +286,7 @@ sub pop3d_cmd_top
         return;
     }
     $heap->{pop3d}->send_to_client($id, '+OK');
-    foreach my $header (@{$heap->{clients}->{$id}->{messages}->[$msgId]->{headers}})
+    foreach my $header (@{$heap->{clients}->{$id}->{messages}->{$msgId}->{headers}})
     {
         $heap->{pop3d}->send_to_client($id, $header->[0] . ': ' . $header->[1]);
     }
@@ -302,17 +307,18 @@ sub pop3d_cmd_list
     {
         #if ($msgId == 1)
         {
-            $heap->{pop3d}->send_to_client($id, "+OK $msgId 41889");
+            $heap->{pop3d}->send_to_client($id, "+OK $msgId 1000");
             return;
         }
     }
     $heap->{pop3d}->send_to_client($id, '+OK Mailbox scan listing follows');
     {
-        my $mid = 1;
-        foreach my $message (@{$heap->{clients}->{$id}->{messages}})
+        my $count = scalar(keys %{$heap->{clients}->{$id}->{messages}})-1;
+        foreach my $mid (1..$count)
         {
+            my $message = $heap->{clients}->{$id}->{messages}->{$mid};
             next unless $message;
-            $heap->{pop3d}->send_to_client($id, "$mid 41889");
+            $heap->{pop3d}->send_to_client($id, "$mid 1000");
             $mid++;
         }
     }
@@ -328,12 +334,12 @@ sub pop3d_cmd_dele
         $heap->{pop3d}->send_to_client($id, '-ERR Unknown AUTHORIZATION state command');
         return;
     }
-    unless ($heap->{clients}->{$id}->{messages}->[$msgId])
+    unless ($heap->{clients}->{$id}->{messages}->{$msgId})
     {
         $heap->{pop3d}->send_to_client($id, "-ERR message $msgId already deleted");
         return;
     }
-    delete $heap->{clients}->{$id}->{messages}->[$msgId];
+    delete $heap->{clients}->{$id}->{messages}->{$msgId};
     $heap->{pop3d}->send_to_client($id, "+OK message $msgId deleted");
     return;
 }
@@ -346,18 +352,23 @@ sub pop3d_cmd_retr
         $heap->{pop3d}->send_to_client($id, '-ERR Unknown AUTHORIZATION state command');
         return;
     }
-    $heap->{pop3d}->send_to_client($id, '+OK 41889 octets');
         
-    foreach my $header (@{$heap->{clients}->{$id}->{messages}->[$msgId]->{headers}})
+    my $body = "";
+    foreach my $line (@{$heap->{clients}->{$id}->{messages}->{$msgId}->{body}})
+    {
+        # byte-stuff lines starting with .
+        $line =~ s/^\./\.\./o;
+        $line .= "\r\n";
+        $body .= $line;
+    }
+    
+    $heap->{pop3d}->send_to_client($id, '+OK '.length($body).' octets');
+    foreach my $header (@{$heap->{clients}->{$id}->{messages}->{$msgId}->{headers}})
     {
         $heap->{pop3d}->send_to_client($id, $header->[0] . ': ' . $header->[1]);
     }
     $heap->{pop3d}->send_to_client($id, "");
-    foreach my $line (@{$heap->{clients}->{$id}->{messages}->[$msgId]->{body}})
-    {
-        $heap->{pop3d}->send_to_client($id, "$line");
-    }
-    $heap->{pop3d}->send_to_client($id, "");
+    $heap->{pop3d}->send_to_client($id, $body);
     $heap->{pop3d}->send_to_client($id, ".");
     return;
 }
