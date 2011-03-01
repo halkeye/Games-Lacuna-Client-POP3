@@ -124,7 +124,7 @@ exit 0;
                 POST => $url,
                 [], $json,
         );
-        warn "Making call to $url with $json";
+        warn "Making call to $url with $json" if $debug;
         $request->{pop3_context} = $contextData;
         $kernel->post('ua', 'request', $callback, $request);
     }
