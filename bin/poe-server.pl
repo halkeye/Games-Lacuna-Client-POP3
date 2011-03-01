@@ -27,7 +27,7 @@ BEGIN {
 use Getopt::Long;
 
 use constant API_KEY => '729088f7-3b44-4704-ab90-96ecc267617e';
-use constant SERVER_NAME => 'pt.lacunaexpanse.com';
+use constant SERVER_NAME => 'us1.lacunaexpanse.com';
 
 my $port = 110;
 $port = 10113 if $ENV{VIM};
@@ -44,8 +44,7 @@ use POE::Component::Server::POP3;
 use Data::Dumper;
 use HTTP::Request;
 
-my $debug = $ENV{VIM};
-$debug = 0;
+my $debug = 0;
 if ($debug)
 {
     {
@@ -98,6 +97,7 @@ POE::Session->create(
               lacuna_login_response
               lacuna_get_inbox_response
               lacuna_get_message_response
+              lacuna_archive_message_response
               )
         ],
     ],
@@ -119,11 +119,12 @@ exit 0;
             params => $data,
         };
         my $json = $j->objToJson($data);
+        $url = "http://". SERVER_NAME ."$url";
         my $request = HTTP::Request->new( 
-                POST => "http://pt.lacunaexpanse.com$url",
+                POST => $url,
                 [], $json,
         );
-        #warn "Making call to http://pt.lacunaexpanse.com$url with $json";
+        warn "Making call to $url with $json";
         $request->{pop3_context} = $contextData;
         $kernel->post('ua', 'request', $callback, $request);
     }
@@ -450,18 +451,29 @@ sub pop3d_cmd_list
 
 sub pop3d_cmd_dele
 {
-    my ($heap, $id, $msgId) = @_[HEAP, ARG0, ARG1];
-    unless ($heap->{clients}->{$id}->{auth})
+    my ($heap, $kernel, $id, $msgId) = @_[HEAP, KERNEL, ARG0, ARG1];
+    my $client = $heap->{clients}->{$id};
+    unless ($client && $client->{auth})
     {
         $heap->{pop3d}->send_to_client($id, '-ERR Unknown AUTHORIZATION state command');
         return;
     }
-    unless ($heap->{clients}->{$id}->{messages}->{$msgId})
+    unless ($client->{messages}->{$msgId})
     {
         $heap->{pop3d}->send_to_client($id, "-ERR message $msgId already deleted");
         return;
     }
-    delete $heap->{clients}->{$id}->{messages}->{$msgId};
+
+    _makeClientCall(
+            $kernel,
+            { id => $id },
+            '/inbox', 
+            'archive_messages', 
+            [ $client->{session_id}, [$client->{messages}->{$msgId}->{id}] ],
+            'lacuna_archive_message_response',
+    );
+
+    delete $client->{messages}->{$msgId};
     $heap->{pop3d}->send_to_client($id, "+OK message $msgId deleted");
     return;
 }
@@ -543,4 +555,10 @@ sub lacuna_get_message_response
     warn "Error: $@";
     $heap->{pop3d}->send_to_client($context->{id}, '-ERR Error has occurred');
     return;
+}
+
+sub lacuna_archive_message_response 
+{
+    my ($heap, $kernel, $request_packet, $response_packet) = @_[HEAP, KERNEL, ARG0, ARG1];
+    # NOOP, i'm okay with it not actually archiving properly
 }
