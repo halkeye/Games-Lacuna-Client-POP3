@@ -20,19 +20,32 @@
 
 use strict;
 use warnings;
-use lib qw(lib);
-
 BEGIN {
     package POE::Kernel;
-    use constant ASSERT_DEFAULT => 1;
+    use constant ASSERT_DEFAULT => $ENV{VIM} ? 1 : 0;
 }
+use Getopt::Long;
+
+use constant API_KEY => '729088f7-3b44-4704-ab90-96ecc267617e';
+use constant SERVER_NAME => 'pt.lacunaexpanse.com';
+
+my $port = 110;
+$port = 10113 if $ENV{VIM};
+my $hostname = 'pop.' . SERVER_NAME;
+
+GetOptions (
+        "port=i" => \$port,
+        'hostname=s' => \$hostname,
+);
+
 # A simple POP3 Server that demonstrates functionality
 use POE qw(Component::Client::HTTP);
 use POE::Component::Server::POP3;
 use Data::Dumper;
 use HTTP::Request;
 
-my $debug = 1;
+my $debug = $ENV{VIM};
+$debug = 0;
 if ($debug)
 {
     {
@@ -84,6 +97,7 @@ POE::Session->create(
 
               lacuna_login_response
               lacuna_get_inbox_response
+              lacuna_get_message_response
               )
         ],
     ],
@@ -92,16 +106,40 @@ POE::Session->create(
 $poe_kernel->run();
 exit 0;
 
+{
+    my $clientCallId = 0;
+    sub _makeClientCall
+    {
+        my ($kernel,$contextData, $url, $method, $data, $callback) = @_;
+        
+        $data = {
+            id => $clientCallId++,
+            method => $method,
+            jsonrpc => '2.0',
+            params => $data,
+        };
+        my $json = $j->objToJson($data);
+        my $request = HTTP::Request->new( 
+                POST => "http://pt.lacunaexpanse.com$url",
+                [], $json,
+        );
+        #warn "Making call to http://pt.lacunaexpanse.com$url with $json";
+        $request->{pop3_context} = $contextData;
+        $kernel->post('ua', 'request', $callback, $request);
+    }
+}
+
+
 sub _start
 {
     my ($kernel,$self,$sender) = @_[KERNEL,OBJECT,SENDER];
 
     my $server = $_[HEAP]->{pop3d} = POE::Component::Server::POP3->spawn(
-            hostname => 'pop.us1.lacunaexpanse.com',
-            port => 10113,
+            hostname => $hostname,
+            port => $port,
     );
     push @{$server->{cmds}}, 'top';
-    warn "Server started on 10113\n";
+    warn "Server started on $port\n";
     return;
 }
 
@@ -110,11 +148,6 @@ sub pop3d_registered
     my ($kernel,$self,$sender) = @_[KERNEL,OBJECT,SENDER];
 
     warn "Server successfully started\n";
-    #my $plugin = Plugin->new();
-    #$_[HEAP]->{pop3d}->plugin_add('TestPlugin', $plugin);
-    #$_[HEAP]->{pop3d}->plugin_add('UIDLPlugin', Games::Lacuna::POP3::Plugin::UIDL);
-    #$_[HEAP]->{pop3d}->plugin_add('UIDLPlugin', Games::Lacuna::POP3::Plugin::TOP->new);
-    # Successfully started pop3d
     return;
 }
 
@@ -176,39 +209,40 @@ sub lacuna_login_response
     # HTTP::Response
     my $response = $response_packet->[0];
 
-    my $id = $request->{pop3_conn_id};
+    my $context = $request->{pop3_context};
     if (!$response->is_success)
     {
-        $heap->{pop3d}->send_to_client($id, '-ERR Bad username or password');
+        warn ($response->content());
+        $heap->{pop3d}->send_to_client($context->{id}, '-ERR Bad username or password');
         return;
     }
     my $client;
     eval {
         my $responseJSON = $j->jsonToObj($response->content());
-        # {"id":5,"method":"login","jsonrpc":"2.0","params":["halkeye","---password---","53137d8f-3544-4118-9001-b0acbec70b3d"]}
-        $client = $heap->{clients}->{$id} || {};
+        $client = $heap->{clients}->{$context->{id}} || {};
         $client->{session_id} = $responseJSON->{result}->{session_id};
         $client->{has_new_messages} = $responseJSON->{result}->{status}->{has_new_messages};
         $client->{auth} = 1;
 
-        $heap->{clients}->{$id} = $client;
+        $heap->{clients}->{$context->{id}} = $client;
         #$heap = $request->{pop3_heap};
     };
     if (!$client)
     {
         warn "Lack of client";
         print "Error: $@\n" if $@;
-        $heap->{pop3d}->send_to_client($id, '-ERR Error has occurred');
+        $heap->{pop3d}->send_to_client($context->{id}, '-ERR Error has occurred');
         return;
     }
 
-    $request = HTTP::Request->new( 
-            POST => 'http://pt.lacunaexpanse.com/inbox',
-            [],
-            '{"id":8,"method":"view_inbox","jsonrpc":"2.0","params":["' . $client->{session_id} . '",{"page_number":1}]}',
+    return _makeClientCall(
+            $kernel,
+            $context,
+            '/inbox', 
+            'view_inbox', 
+            [ $client->{session_id}, { page_number => 1} ],
+            'lacuna_get_inbox_response',
     );
-    $request->{pop3_conn_id} = $id;
-    $kernel->post('ua', 'request', 'lacuna_get_inbox_response', $request);
     return;
 }
 
@@ -221,11 +255,11 @@ sub lacuna_get_inbox_response
     # HTTP::Response
     my $response = $response_packet->[0];
 
-    my $id = $request->{pop3_conn_id};
+    my $context = $request->{pop3_context};
     if (!$response->is_success)
     {
         warn $response->content();
-        $heap->{pop3d}->send_to_client($id, '-ERR Error Occurred - get_inbox');
+        $heap->{pop3d}->send_to_client($context->{id}, '-ERR Error Occurred - get_inbox');
         return;
     }
     my $client;
@@ -238,8 +272,7 @@ sub lacuna_get_inbox_response
     my $output_formatter = DateTime::Format::Mail->new();
     eval {
         my $responseJSON = $j->jsonToObj($response->content());
-        # {"jsonrpc":"2.0","id":8,"result":{"messages":[{"date":"28 02 2011 02:01:19 +0000","subject":"Glyph Discovered!","body_preview":"Great news! Our archaeologists","to_id":"583","tags":["Alert"],"from_id":"583","to":"halkeye","from":"halkeye","has_read":"1","id":"1626283","has_replied":"0"}],"message_count":"338"}}
-        $client = $heap->{clients}->{$id} || {};
+        $client = $heap->{clients}->{$context->{id}} || {};
 
         my $count = 1;
         foreach my $msg (@{$responseJSON->{result}->{messages}})
@@ -249,40 +282,40 @@ sub lacuna_get_inbox_response
 
             my $dt = $input_formatter->parse_datetime($msg->{date});
             my $date = $output_formatter->format_datetime($dt);
+
             # For filtering
-            my @tagHeaders = map { ['X-Lacuna-Mail-Type-'.$_, 1] } @{$msg->{tags}};
-            #"has_read":"1","id":"1616502","has_replied":"0"
+            my %headers = (
+                    'Message-ID' => $id,
+                    'Date' => $date,
+                    'From' => $msg->{from}.'@' . SERVER_NAME,
+                    'Subject' => '[' . join(',', @{$msg->{tags}}) . '] ' . $msg->{subject},
+                    'To' => $msg->{to}, # fallback
+                    'Mime-Version' => '1.0',
+                    'Content-Type' => 'text/plain; charset=utf-8',
+                    'Content-Transfer-Encoding' => 'quoted-printable',
+            );
+
+            foreach (@{$msg->{tags}})
+            {
+                $headers{'X-Lacuna-Mail-Type-'.$_} = 1;
+            }
 
             $client->{messages}->{$count} = {
                 id => $id,
-                headers => [
-                    ['Message-ID' => $id],
-                    ['Date' => $date],
-                    ['From' => $msg->{from}.'@lacuna'],
-                    ['To' => $msg->{to} . '@lacuna'],
-                    ['Subject' => '[' . join(',', @{$msg->{tags}}) . '] ' . $msg->{subject}],
-                    ['Mime-Version' => '1.0'],
-                    ['Content-Type' => 'text/plain; charset=utf-8'],
-                    ['Content-Transfer-Encoding' => 'quoted-printable'],
-                    @tagHeaders,
-                ],
-                #body => [
-                #    "I could not locate the plan you wanted me to find. I'm sure it is there somewhere. Give me another chance later and I'll locate it and complete my mission.",
-                #    "",
-                #    "Agent Null of Gavania 3",
-                #],
+                headers => \%headers,
             };
+            # 'To' => join(" ,", map { $_ . ' <' . $_ . '@' . SERVER_NAME . '>' } @{$msg->{recipients}}) ],
             $count++;
         }
-        $heap->{clients}->{$id} = $client;
-        $heap->{pop3d}->send_to_client($id, '+OK Mailbox open, 0 messages');
+        $heap->{clients}->{$context->{id}} = $client;
+        $heap->{pop3d}->send_to_client($context->{id}, '+OK Mailbox open, 0 messages');
     };
 
     if (!$client)
     {
         warn "Error: $@\n" if $@;
         warn "Lack of client";
-        $heap->{pop3d}->send_to_client($id, '-ERR Error has occurred');
+        $heap->{pop3d}->send_to_client($context->{id}, '-ERR Error has occurred');
         return;
     }
 }
@@ -297,23 +330,17 @@ sub pop3d_cmd_pass
         return;
     }
 
-    my $user = $heap->{clients}->{id}->{user};
-    my $request = HTTP::Request->new( 
-            POST => 'http://pt.lacunaexpanse.com/empire',
-            [], '{"id":5,"method":"login","jsonrpc":"2.0","params":["'.$user.'","'.$pass.'","53137d8f-3544-4118-9001-b0acbec70b3d"]}'
+    my $user = $heap->{clients}->{$id}->{user};
+    return _makeClientCall(
+            $kernel,
+            { id => $id},
+            '/empire', 
+            'login', 
+            [ $user, $pass, API_KEY ],
+            'lacuna_login_response',
     );
-    $request->{pop3_conn_id} = $id;
-    $kernel->post('ua', 'request', 'lacuna_login_response', $request);
-    return;
     
     # pt.lacunaexpanse.com
-    #
-    # {"id":8,"method":"view_inbox","jsonrpc":"2.0","params":["2b52ce9d-5cad-40fa-9d24-c7af4d30f224",{"page_number":1}]}
-    # {"jsonrpc":"2.0","id":8,"result":{"messages":[{"date":"28 02 2011 02:01:19 +0000","subject":"Glyph Discovered!","body_preview":"Great news! Our archaeologists","to_id":"583","tags":["Alert"],"from_id":"583","to":"halkeye","from":"halkeye","has_read":"1","id":"1626283","has_replied":"0"}],"message_count":"338"}}
-    #
-    # {"id":9,"method":"read_message","jsonrpc":"2.0","params":["2b52ce9d-5cad-40fa-9d24-c7af4d30f224","1623899"]}
-    # {"jsonrpc":"2.0","id":9,"result":{"message":{"attachments":null,"date":"27 02 2011 23:33:48 +0000","subject":"Pollution Causing Outrage","in_reply_to":null,"to_id":"583","tags":["Alert"],"body":"The citizens of {Planet 123456 Planet Name} are up in arms about the level of pollution being produced by the continued growth on the planet.\n\nYou should find a way to manage the waste or their discontent could affect the progress of the empire dramatically.\n\nRegards,\n\nYour Humble Assistant\n","from_id":"583","to":"halkeye","from":"halkeye","has_read":"1","has_replied":"0","id":"1623899","recipients":["halkeye"],"has_archived":"0"}}}
-    #
     # {"id":10,"method":"archive_messages","jsonrpc":"2.0","params":["2b52ce9d-5cad-40fa-9d24-c7af4d30f224",["1623899"]]}
     return;
 }
@@ -441,15 +468,34 @@ sub pop3d_cmd_dele
 
 sub pop3d_cmd_retr
 {
-    my ($heap, $id, $msgId) = @_[HEAP, ARG0, ARG1];
-    unless ($heap->{clients}->{$id}->{auth})
+    my ($heap, $kernel, $id, $msgId) = @_[HEAP, KERNEL, ARG0, ARG1];
+    my $client = $heap->{clients}->{$id};
+    unless ($client && $client->{auth})
     {
         $heap->{pop3d}->send_to_client($id, '-ERR Unknown AUTHORIZATION state command');
         return;
     }
-        
+
+    my $message = $client->{messages}->{$msgId};
+
+    return _makeClientCall(
+            $kernel,
+            { id => $id, msgId => $msgId, message => $message},
+            '/inbox', 
+            'read_message', 
+            [ $client->{session_id}, $message->{id} ],
+            'lacuna_get_message_response',
+    ) if (!$message->{body});
+
+    return _send_msg_body($heap, $id, $message);
+}
+
+sub _send_msg_body
+{
+    my ($heap, $id, $message) = @_;
+
     my $body = "";
-    foreach my $line (@{$heap->{clients}->{$id}->{messages}->{$msgId}->{body}})
+    foreach my $line (@{$message->{body}})
     {
         # byte-stuff lines starting with .
         $line =~ s/^\./\.\./o;
@@ -458,12 +504,43 @@ sub pop3d_cmd_retr
     }
     
     $heap->{pop3d}->send_to_client($id, '+OK '.length($body).' octets');
-    foreach my $header (@{$heap->{clients}->{$id}->{messages}->{$msgId}->{headers}})
+    foreach my $header (keys %{$message->{headers}})
     {
-        $heap->{pop3d}->send_to_client($id, $header->[0] . ': ' . $header->[1]);
+        $heap->{pop3d}->send_to_client($id, $header . ': ' . $message->{headers}->{$header});
     }
     $heap->{pop3d}->send_to_client($id, "");
     $heap->{pop3d}->send_to_client($id, $body);
     $heap->{pop3d}->send_to_client($id, ".");
+    return;
+}
+
+sub lacuna_get_message_response
+{
+    my ($heap, $kernel, $request_packet, $response_packet) = @_[HEAP, KERNEL, ARG0, ARG1];
+
+    # HTTP::Request
+    my $request = $request_packet->[0];
+    # HTTP::Response
+    my $response = $response_packet->[0];
+
+    my $context = $request->{pop3_context};
+    if (!$response->is_success)
+    {
+        $heap->{pop3d}->send_to_client($context->{id}, '-ERR Unable to locate message');
+        return;
+    }
+
+    my $client;
+    eval {
+        my $responseJSON = $j->jsonToObj($response->content());
+        my $msg = $responseJSON->{result}->{message};
+
+        $context->{message}->{headers}->{'To'} = join(" ,", map { $_ . ' <' . $_ . '@' . SERVER_NAME . '>' } @{$msg->{recipients}})
+            if $msg->{recipients};
+        $context->{message}->{body} = [split('\n', $msg->{body})];
+    };
+    return _send_msg_body($heap, $context->{id}, $context->{message}) unless $@;
+    warn "Error: $@";
+    $heap->{pop3d}->send_to_client($context->{id}, '-ERR Error has occurred');
     return;
 }
