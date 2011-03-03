@@ -29,6 +29,7 @@ use Getopt::Long;
 use constant API_KEY => '729088f7-3b44-4704-ab90-96ecc267617e';
 use constant SERVER_NAME => 'us1.lacunaexpanse.com';
 
+my $debug = $ENV{VIM};
 my $port = 110;
 $port = 10113 if $ENV{VIM};
 my $hostname = 'pop.' . SERVER_NAME;
@@ -36,6 +37,7 @@ my $hostname = 'pop.' . SERVER_NAME;
 GetOptions (
         "port=i" => \$port,
         'hostname=s' => \$hostname,
+        'debug!' => \$debug,
 );
 
 # A simple POP3 Server that demonstrates functionality
@@ -44,7 +46,6 @@ use POE::Component::Server::POP3;
 use Data::Dumper;
 use HTTP::Request;
 
-my $debug = 0;
 if ($debug)
 {
     {
@@ -159,7 +160,7 @@ use DateTime;
 sub pop3d_connection
 {
     my ($heap, $id) = @_[HEAP, ARG0];
-    warn "New Connection: $id\n";
+    warn scalar(localtime), " New Connection: $id\n";
 
     $heap->{clients}->{$id} = {
         auth => 0,
@@ -171,7 +172,7 @@ sub pop3d_connection
 sub pop3d_disconnected
 {
     my ($heap, $id) = @_[HEAP, ARG0];
-    warn "New Disconnection: $id\n";
+    warn scalar(localtime), " New Disconnection: $id\n";
     delete $heap->{clients}->{$id};
     return;
 }
