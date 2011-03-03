@@ -562,4 +562,16 @@ sub lacuna_archive_message_response
 {
     my ($heap, $kernel, $request_packet, $response_packet) = @_[HEAP, KERNEL, ARG0, ARG1];
     # NOOP, i'm okay with it not actually archiving properly
+    # HTTP::Request
+    my $request = $request_packet->[0];
+    # HTTP::Response
+    my $response = $response_packet->[0];
+
+    my $context = $request->{pop3_context};
+    if (!$response->is_success)
+    {
+        warn("Delete doesn't work: " . $response->content . "\n");
+        return;
+    }
+    warn("Delete doesn't work: " . $response->content . "\n") if $debug;
 }
