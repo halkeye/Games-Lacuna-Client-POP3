@@ -20,33 +20,36 @@
 
 use strict;
 use warnings;
-BEGIN {
+
+BEGIN
+{
+
     package POE::Kernel;
     use constant ASSERT_DEFAULT => $ENV{VIM} ? 1 : 0;
 }
 use Getopt::Long;
 
-use constant API_KEY => '729088f7-3b44-4704-ab90-96ecc267617e';
+use constant API_KEY     => '729088f7-3b44-4704-ab90-96ecc267617e';
 use constant SERVER_NAME => 'us1.lacunaexpanse.com';
 
 my $debug = $ENV{VIM};
-my $port = 110;
+my $port  = 110;
 $port = 10113 if $ENV{VIM};
 my $hostname = 'pop.' . SERVER_NAME;
 
-my $user = 'nobody';
-my $group = 'nobody';
-my $pidfile = "/var/state/lacuna-pop3-server.pid";
+my $user      = 'nobody';
+my $group     = 'nobody';
+my $pidfile   = "/var/state/lacuna-pop3-server.pid";
 my $daemonize = 0;
 
-GetOptions (
-        "port=i" => \$port,
-        'hostname=s' => \$hostname,
-        'debug!' => \$debug,
-        'user=s' => \$user,
-        'group=s' => \$group,
-        'pidfile=s' => \$pidfile,
-        'daemonize!' => \$daemonize,
+GetOptions(
+    "port=i"     => \$port,
+    'hostname=s' => \$hostname,
+    'debug!'     => \$debug,
+    'user=s'     => \$user,
+    'group=s'    => \$group,
+    'pidfile=s'  => \$pidfile,
+    'daemonize!' => \$daemonize,
 );
 
 # A simple POP3 Server that demonstrates functionality
@@ -57,14 +60,14 @@ use Net::Server::Daemonize qw(daemonize);
 use Data::Dumper;
 use HTTP::Request;
 
-daemonize($user,$group,$pidfile) if $daemonize;
+daemonize($user, $group, $pidfile) if $daemonize;
 
 if ($debug)
 {
     {
         my $func = \&POE::Component::Server::POP3::_conn_input;
         *POE::Component::Server::POP3::_conn_input = sub {
-            my ($kernel,$self,$input,$id) = @_[KERNEL,OBJECT,ARG0,ARG1];
+            my ($kernel, $self, $input, $id) = @_[KERNEL, OBJECT, ARG0, ARG1];
             print STDERR "<= $id> $input\n";
             return $func->(@_);
         };
@@ -72,8 +75,9 @@ if ($debug)
     {
         my $func = \&POE::Component::Server::POP3::_send_to_client;
         *POE::Component::Server::POP3::_send_to_client = sub {
-            my ($kernel,$self,$id,$output) = @_[KERNEL,OBJECT,ARG0..ARG1];
+            my ($kernel, $self, $id, $output) = @_[KERNEL, OBJECT, ARG0 .. ARG1];
             print STDERR "=> $id> $output\n";
+
             #$output = "\r\n" if !$output;
             #$output .= "\r\n";
             return $func->(@_);
@@ -82,11 +86,11 @@ if ($debug)
 }
 
 use JSON::Any;
-my $j = JSON::Any->new(utf8=>1);
+my $j = JSON::Any->new(utf8 => 1);
 
 POE::Component::Client::HTTP->spawn(
-    Agent     => 'Lacuna-POP3-Server/0.01',   # defaults to something long
-    Alias     => 'ua',                  # defaults to 'weeble'
+    Agent => 'Lacuna-POP3-Server/0.01',    # defaults to something long
+    Alias => 'ua',                         # defaults to 'weeble'
 );
 
 POE::Session->create(
@@ -122,21 +126,22 @@ exit 0;
 
 {
     my $clientCallId = 0;
+
     sub _makeClientCall
     {
-        my ($kernel,$contextData, $url, $method, $data, $callback) = @_;
-        
+        my ($kernel, $contextData, $url, $method, $data, $callback) = @_;
+
         $data = {
-            id => $clientCallId++,
-            method => $method,
+            id      => $clientCallId++,
+            method  => $method,
             jsonrpc => '2.0',
-            params => $data,
+            params  => $data,
         };
         my $json = $j->objToJson($data);
-        $url = "http://". SERVER_NAME ."$url";
-        my $request = HTTP::Request->new( 
-                POST => $url,
-                [], $json,
+        $url = "http://" . SERVER_NAME . "$url";
+        my $request = HTTP::Request->new(
+            POST => $url,
+            [], $json,
         );
         warn "Making call to $url with $json" if $debug;
         $request->{pop3_context} = $contextData;
@@ -144,14 +149,13 @@ exit 0;
     }
 }
 
-
 sub _start
 {
-    my ($kernel,$self,$sender) = @_[KERNEL,OBJECT,SENDER];
+    my ($kernel, $self, $sender) = @_[KERNEL, OBJECT, SENDER];
 
     my $server = $_[HEAP]->{pop3d} = POE::Component::Server::POP3->spawn(
-            hostname => $hostname,
-            port => $port,
+        hostname => $hostname,
+        port     => $port,
     );
     push @{$server->{cmds}}, 'top';
     warn "Server started on $port\n";
@@ -160,7 +164,7 @@ sub _start
 
 sub pop3d_registered
 {
-    my ($kernel,$self,$sender) = @_[KERNEL,OBJECT,SENDER];
+    my ($kernel, $self, $sender) = @_[KERNEL, OBJECT, SENDER];
 
     warn "Server successfully started\n";
     return;
@@ -176,7 +180,7 @@ sub pop3d_connection
     warn scalar(localtime), " New Connection: $id\n";
 
     $heap->{clients}->{$id} = {
-        auth => 0,
+        auth     => 0,
         messages => {},
     };
     return;
@@ -221,13 +225,14 @@ sub lacuna_login_response
 
     # HTTP::Request
     my $request = $request_packet->[0];
+
     # HTTP::Response
     my $response = $response_packet->[0];
 
     my $context = $request->{pop3_context};
     if (!$response->is_success)
     {
-        warn ($response->content());
+        warn($response->content());
         $heap->{pop3d}->send_to_client($context->{id}, '-ERR Bad username or password');
         return;
     }
@@ -235,11 +240,12 @@ sub lacuna_login_response
     eval {
         my $responseJSON = $j->jsonToObj($response->content());
         $client = $heap->{clients}->{$context->{id}} || {};
-        $client->{session_id} = $responseJSON->{result}->{session_id};
+        $client->{session_id}       = $responseJSON->{result}->{session_id};
         $client->{has_new_messages} = $responseJSON->{result}->{status}->{has_new_messages};
-        $client->{auth} = 1;
+        $client->{auth}             = 1;
 
         $heap->{clients}->{$context->{id}} = $client;
+
         #$heap = $request->{pop3_heap};
     };
     if (!$client)
@@ -250,14 +256,9 @@ sub lacuna_login_response
         return;
     }
 
-    return _makeClientCall(
-            $kernel,
-            $context,
-            '/inbox', 
-            'view_inbox', 
-            [ $client->{session_id}, { page_number => 1} ],
-            'lacuna_get_inbox_response',
-    );
+    return _makeClientCall($kernel, $context, '/inbox', 'view_inbox',
+        [$client->{session_id}, {page_number => 1}],
+        'lacuna_get_inbox_response',);
     return;
 }
 
@@ -267,6 +268,7 @@ sub lacuna_get_inbox_response
 
     # HTTP::Request
     my $request = $request_packet->[0];
+
     # HTTP::Response
     my $response = $response_packet->[0];
 
@@ -292,10 +294,11 @@ sub lacuna_get_inbox_response
         my $count = 1;
         foreach my $msg (@{$responseJSON->{result}->{messages}})
         {
-            #use Data::GUID;
-            my $id = $msg->{id}; #.Data::GUID->new->as_string();
 
-            my $dt = $input_formatter->parse_datetime($msg->{date});
+            #use Data::GUID;
+            my $id = $msg->{id};    #.Data::GUID->new->as_string();
+
+            my $dt   = $input_formatter->parse_datetime($msg->{date});
             my $date = $output_formatter->format_datetime($dt);
 
             my $from = $msg->{from};
@@ -303,28 +306,30 @@ sub lacuna_get_inbox_response
             my $to = $msg->{to};
             $to =~ s/\s+/_/g;
             my $serverName = SERVER_NAME;
+
             # For filtering
             my %headers = (
-                    'Message-ID' => $id,
-                    'Date' => $date,
-                    'From' => "$msg->{from} <$from\@$serverName>",
-                    'Subject' => '[' . join(',', @{$msg->{tags}}) . '] ' . $msg->{subject},
-                    'To' => "$msg->{to} <$to\@$serverName>",
-                    'Mime-Version' => '1.0',
-                    'Content-Type' => 'text/plain; charset=utf-8',
-                    'Content-Transfer-Encoding' => 'quoted-printable',
+                'Message-ID'   => $id,
+                'Date'         => $date,
+                'From'         => "$msg->{from} <$from\@$serverName>",
+                'Subject'      => '[' . join(',', @{$msg->{tags}}) . '] ' . $msg->{subject},
+                'To'           => "$msg->{to} <$to\@$serverName>",
+                'Mime-Version' => '1.0',
+                'Content-Type' => 'text/plain; charset=utf-8',
+                'Content-Transfer-Encoding' => 'quoted-printable',
             );
 
             foreach (@{$msg->{tags}})
             {
-                $headers{'X-Lacuna-Mail-Type-'.$_} = 1;
+                $headers{'X-Lacuna-Mail-Type-' . $_} = 1;
             }
 
             $client->{messages}->{$count} = {
-                id => $id,
+                id      => $id,
                 headers => \%headers,
             };
-            # 'To' => join(" ,", map { $_ . ' <' . $_ . '@' . SERVER_NAME . '>' } @{$msg->{recipients}}) ],
+
+     # 'To' => join(" ,", map { $_ . ' <' . $_ . '@' . SERVER_NAME . '>' } @{$msg->{recipients}}) ],
             $count++;
         }
         $heap->{clients}->{$context->{id}} = $client;
@@ -352,16 +357,13 @@ sub pop3d_cmd_pass
 
     my $user = $heap->{clients}->{$id}->{user};
     return _makeClientCall(
-            $kernel,
-            { id => $id},
-            '/empire', 
-            'login', 
-            [ $user, $pass, API_KEY ],
-            'lacuna_login_response',
+        $kernel, {id => $id},
+        '/empire', 'login', [$user, $pass, API_KEY],
+        'lacuna_login_response',
     );
-    
-    # pt.lacunaexpanse.com
-    # {"id":10,"method":"archive_messages","jsonrpc":"2.0","params":["2b52ce9d-5cad-40fa-9d24-c7af4d30f224",["1623899"]]}
+
+# pt.lacunaexpanse.com
+# {"id":10,"method":"archive_messages","jsonrpc":"2.0","params":["2b52ce9d-5cad-40fa-9d24-c7af4d30f224",["1623899"]]}
     return;
 }
 
@@ -373,7 +375,7 @@ sub pop3d_cmd_stat
         $heap->{pop3d}->send_to_client($id, '-ERR Unknown AUTHORIZATION state command');
         return;
     }
-    my $count = scalar(keys %{$heap->{clients}->{$id}->{messages}})-1;
+    my $count = scalar(keys %{$heap->{clients}->{$id}->{messages}}) - 1;
     $heap->{pop3d}->send_to_client($id, "+OK $count 10000");
     return;
 }
@@ -400,8 +402,8 @@ sub pop3d_cmd_uidl
     }
     $heap->{pop3d}->send_to_client($id, '+OK');
     {
-        my $count = scalar(keys %{$heap->{clients}->{$id}->{messages}})-1;
-        foreach my $mid (1..$count)
+        my $count = scalar(keys %{$heap->{clients}->{$id}->{messages}}) - 1;
+        foreach my $mid (1 .. $count)
         {
             my $message = $heap->{clients}->{$id}->{messages}->{$mid};
             $heap->{pop3d}->send_to_client($id, "$mid " . $message->{id});
@@ -439,7 +441,7 @@ sub pop3d_cmd_top
 
 sub pop3d_cmd_list
 {
-    my ($heap, $id, $msgId ) = @_[HEAP, ARG0, ARG1];
+    my ($heap, $id, $msgId) = @_[HEAP, ARG0, ARG1];
     unless ($heap->{clients}->{$id}->{auth})
     {
         $heap->{pop3d}->send_to_client($id, '-ERR Unknown AUTHORIZATION state command');
@@ -447,6 +449,7 @@ sub pop3d_cmd_list
     }
     if ($msgId)
     {
+
         #if ($msgId == 1)
         {
             $heap->{pop3d}->send_to_client($id, "+OK $msgId 1000");
@@ -455,8 +458,8 @@ sub pop3d_cmd_list
     }
     $heap->{pop3d}->send_to_client($id, '+OK Mailbox scan listing follows');
     {
-        my $count = scalar(keys %{$heap->{clients}->{$id}->{messages}})-1;
-        foreach my $mid (1..$count)
+        my $count = scalar(keys %{$heap->{clients}->{$id}->{messages}}) - 1;
+        foreach my $mid (1 .. $count)
         {
             my $message = $heap->{clients}->{$id}->{messages}->{$mid};
             next unless $message;
@@ -484,12 +487,10 @@ sub pop3d_cmd_dele
     }
 
     _makeClientCall(
-            $kernel,
-            { id => $id },
-            '/inbox', 
-            'archive_messages', 
-            [ $client->{session_id}, [$client->{messages}->{$msgId}->{id}] ],
-            'lacuna_archive_message_response',
+        $kernel, {id => $id},
+        '/inbox', 'archive_messages',
+        [$client->{session_id}, [$client->{messages}->{$msgId}->{id}]],
+        'lacuna_archive_message_response',
     );
 
     delete $client->{messages}->{$msgId};
@@ -510,12 +511,9 @@ sub pop3d_cmd_retr
     my $message = $client->{messages}->{$msgId};
 
     return _makeClientCall(
-            $kernel,
-            { id => $id, msgId => $msgId, message => $message},
-            '/inbox', 
-            'read_message', 
-            [ $client->{session_id}, $message->{id} ],
-            'lacuna_get_message_response',
+        $kernel, {id => $id, msgId => $msgId, message => $message},
+        '/inbox', 'read_message', [$client->{session_id}, $message->{id}],
+        'lacuna_get_message_response',
     ) if (!$message->{body});
 
     return _send_msg_body($heap, $id, $message);
@@ -528,13 +526,14 @@ sub _send_msg_body
     my $body = "";
     foreach my $line (@{$message->{body}})
     {
+
         # byte-stuff lines starting with .
         $line =~ s/^\./\.\./o;
         $line .= "\r\n";
         $body .= $line;
     }
-    
-    $heap->{pop3d}->send_to_client($id, '+OK '.length($body).' octets');
+
+    $heap->{pop3d}->send_to_client($id, '+OK ' . length($body) . ' octets');
     foreach my $header (keys %{$message->{headers}})
     {
         $heap->{pop3d}->send_to_client($id, $header . ': ' . $message->{headers}->{$header});
@@ -551,6 +550,7 @@ sub lacuna_get_message_response
 
     # HTTP::Request
     my $request = $request_packet->[0];
+
     # HTTP::Response
     my $response = $response_packet->[0];
 
@@ -564,10 +564,11 @@ sub lacuna_get_message_response
     my $client;
     eval {
         my $responseJSON = $j->jsonToObj($response->content());
-        my $msg = $responseJSON->{result}->{message};
+        my $msg          = $responseJSON->{result}->{message};
 
-        $context->{message}->{headers}->{'To'} =
-          join(" ,", map { my $from = $_; $from =~ s/\s+/_/g; $_ . ' <' . $from . '@' . SERVER_NAME . '>' } @{$msg->{recipients}})
+        $context->{message}->{headers}->{'To'} = join(" ,",
+            map { my $from = $_; $from =~ s/\s+/_/g; $_ . ' <' . $from . '@' . SERVER_NAME . '>' }
+              @{$msg->{recipients}})
           if $msg->{recipients};
         $context->{message}->{body} = [split('\n', $msg->{body})];
     };
@@ -577,12 +578,14 @@ sub lacuna_get_message_response
     return;
 }
 
-sub lacuna_archive_message_response 
+sub lacuna_archive_message_response
 {
     my ($heap, $kernel, $request_packet, $response_packet) = @_[HEAP, KERNEL, ARG0, ARG1];
+
     # NOOP, i'm okay with it not actually archiving properly
     # HTTP::Request
     my $request = $request_packet->[0];
+
     # HTTP::Response
     my $response = $response_packet->[0];
 
