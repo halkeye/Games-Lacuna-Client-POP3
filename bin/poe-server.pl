@@ -36,7 +36,7 @@ my $hostname = 'pop.' . SERVER_NAME;
 
 my $user = 'nobody';
 my $group = 'nobody';
-my $pidFile = "/var/state/lacuna-pop3-server.pid";
+my $pidfile = "/var/state/lacuna-pop3-server.pid";
 my $daemonize = 0;
 
 GetOptions (
@@ -57,7 +57,7 @@ use Net::Server::Daemonize qw(daemonize);
 use Data::Dumper;
 use HTTP::Request;
 
-daemonize($user,$group,$pidfile) if $daemonize
+daemonize($user,$group,$pidfile) if $daemonize;
 
 if ($debug)
 {
