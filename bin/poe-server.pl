@@ -34,17 +34,30 @@ my $port = 110;
 $port = 10113 if $ENV{VIM};
 my $hostname = 'pop.' . SERVER_NAME;
 
+my $user = 'nobody';
+my $group = 'nobody';
+my $pidFile = "/var/state/lacuna-pop3-server.pid";
+my $daemonize = 0;
+
 GetOptions (
         "port=i" => \$port,
         'hostname=s' => \$hostname,
         'debug!' => \$debug,
+        'user=s' => \$user,
+        'group=s' => \$group,
+        'pidfile=s' => \$pidfile,
+        'daemonize!' => \$daemonize,
 );
 
 # A simple POP3 Server that demonstrates functionality
-use POE qw(Component::Client::HTTP);
+use POE;
+use POE::Component::Client::HTTP;
 use POE::Component::Server::POP3;
+use Net::Server::Daemonize qw(daemonize);
 use Data::Dumper;
 use HTTP::Request;
+
+daemonize($user,$group,$pidfile) if $daemonize
 
 if ($debug)
 {
