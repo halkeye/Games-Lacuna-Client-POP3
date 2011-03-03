@@ -285,13 +285,18 @@ sub lacuna_get_inbox_response
             my $dt = $input_formatter->parse_datetime($msg->{date});
             my $date = $output_formatter->format_datetime($dt);
 
+            my $from = $msg->{from};
+            $from =~ s/\s+/_/g;
+            my $to = $msg->{to};
+            $to =~ s/\s+/_/g;
+            my $serverName = SERVER_NAME;
             # For filtering
             my %headers = (
                     'Message-ID' => $id,
                     'Date' => $date,
-                    'From' => $msg->{from}.'@' . SERVER_NAME,
+                    'From' => "$msg->{from} <$from\@$serverName>",
                     'Subject' => '[' . join(',', @{$msg->{tags}}) . '] ' . $msg->{subject},
-                    'To' => $msg->{to}, # fallback
+                    'To' => "$msg->{to} <$to\@$serverName>",
                     'Mime-Version' => '1.0',
                     'Content-Type' => 'text/plain; charset=utf-8',
                     'Content-Transfer-Encoding' => 'quoted-printable',
@@ -548,8 +553,9 @@ sub lacuna_get_message_response
         my $responseJSON = $j->jsonToObj($response->content());
         my $msg = $responseJSON->{result}->{message};
 
-        $context->{message}->{headers}->{'To'} = join(" ,", map { $_ . ' <' . $_ . '@' . SERVER_NAME . '>' } @{$msg->{recipients}})
-            if $msg->{recipients};
+        $context->{message}->{headers}->{'To'} =
+          join(" ,", map { my $from = $_; $from =~ s/\s+/_/g; $_ . ' <' . $from . '@' . SERVER_NAME . '>' } @{$msg->{recipients}})
+          if $msg->{recipients};
         $context->{message}->{body} = [split('\n', $msg->{body})];
     };
     return _send_msg_body($heap, $context->{id}, $context->{message}) unless $@;
